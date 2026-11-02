@@ -1,0 +1,2248 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2ecdf" id="themeColor">
+<meta name="description" content="一个零依赖、打开即用的纯 HTML 任务便签墙：新建、编辑、完成、拖拽排序与本地保存，无需 node/npm。">
+<title>任务便签墙 · 纯 HTML 便签板</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='48' height='48' rx='6' fill='%23ffe08a'/%3E%3Cpath d='M20 26h24M20 34h18M20 42h10' stroke='%23433018' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<script>
+  (function () {
+    var theme = 'light';
+    try {
+      var saved = localStorage.getItem('sticky-notes.theme.v1');
+      if (saved === 'light' || saved === 'dark') {
+        theme = saved;
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        theme = 'dark';
+      }
+    } catch (error) {
+      theme = 'light';
+    }
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>
+<style>
+  :root {
+    --font-sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    --bg: #f2ecdf;
+    --bg-elevated: #fbf7ef;
+    --ink: #2d261e;
+    --ink-soft: #5f5548;
+    --muted: #837768;
+    --faint: #9a8d7c;
+    --line: rgba(66, 50, 30, .14);
+    --line-strong: rgba(66, 50, 30, .26);
+    --accent: #b9482b;
+    --accent-strong: #a33c22;
+    --accent-soft: rgba(185, 72, 43, .12);
+    --focus: #1f6f5c;
+    --panel: rgba(255, 251, 243, .84);
+    --panel-solid: #fffcf6;
+    --shadow-card: 0 1px 1px rgba(71, 50, 21, .07), 0 14px 24px -14px rgba(71, 50, 21, .42);
+    --shadow-panel: 0 30px 70px -26px rgba(47, 33, 16, .52);
+    --dot: rgba(90, 70, 40, .055);
+    --wall-max: 1180px;
+    color-scheme: light;
+  }
+
+  [data-theme="dark"] {
+    --bg: #15110e;
+    --bg-elevated: #211a15;
+    --ink: #f4ead9;
+    --ink-soft: #cdbfae;
+    --muted: #a4937f;
+    --faint: #8c7c6a;
+    --line: rgba(255, 238, 214, .13);
+    --line-strong: rgba(255, 238, 214, .22);
+    --accent: #ff9364;
+    --accent-strong: #ffa87f;
+    --accent-soft: rgba(255, 147, 100, .14);
+    --focus: #8fd6bf;
+    --panel: rgba(38, 30, 24, .82);
+    --panel-solid: #241d17;
+    --shadow-card: 0 1px 1px rgba(0, 0, 0, .3), 0 18px 30px -16px rgba(0, 0, 0, .65);
+    --shadow-panel: 0 40px 90px -30px rgba(0, 0, 0, .85);
+    --dot: rgba(255, 240, 220, .05);
+    color-scheme: dark;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(1100px 620px at 10% -12%, var(--accent-soft), transparent 62%),
+      radial-gradient(rgba(90, 70, 40, 0) 0, var(--dot) 1px, transparent 1.4px);
+    background-size: auto, 24px 24px;
+    background-attachment: fixed;
+  }
+
+  [data-theme="dark"] body {
+    background-image:
+      radial-gradient(1100px 620px at 10% -12%, rgba(255, 147, 100, .10), transparent 62%),
+      radial-gradient(rgba(255, 240, 220, 0) 0, var(--dot) 1px, transparent 1.4px);
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* ---------- 顶栏 ---------- */
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    backdrop-filter: blur(16px) saturate(1.15);
+  }
+
+  .topbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    max-width: var(--wall-max);
+    margin: 0 auto;
+    padding: 15px 28px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    color: var(--bg);
+    background: var(--ink);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 8px 16px -10px rgba(0, 0, 0, .55);
+  }
+
+  .brand-mark svg {
+    width: 25px;
+    height: 25px;
+  }
+
+  .brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .brand-title {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+
+  .brand-sub {
+    color: var(--muted);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    color: var(--ink-soft);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color .16s ease, color .16s ease, border-color .16s ease;
+  }
+
+  .icon-btn:hover {
+    color: var(--ink);
+    background: var(--accent-soft);
+    border-color: var(--line-strong);
+  }
+
+  .icon-btn svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .theme-icon {
+    display: grid;
+    place-items: center;
+  }
+
+  .theme-icon-sun {
+    display: none;
+  }
+
+  [data-theme="dark"] .theme-icon-sun {
+    display: grid;
+  }
+
+  [data-theme="dark"] .theme-icon-moon {
+    display: none;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 17px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color .16s ease, transform .16s ease, box-shadow .16s ease, color .16s ease;
+  }
+
+  .btn svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+  }
+
+  .btn-primary {
+    color: #fffaf2;
+    background: var(--accent);
+    box-shadow: 0 10px 20px -12px rgba(120, 42, 20, .8);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-strong);
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  [data-theme="dark"] .btn-primary {
+    color: #2a1409;
+    box-shadow: 0 10px 22px -12px rgba(0, 0, 0, .9);
+  }
+
+  .btn-ghost {
+    color: var(--ink-soft);
+    background: transparent;
+    border-color: var(--line);
+  }
+
+  .btn-ghost:hover {
+    color: var(--ink);
+    background: var(--accent-soft);
+    border-color: var(--line-strong);
+  }
+
+  .btn kbd {
+    margin-left: 2px;
+  }
+
+  kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 1;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    box-shadow: 0 1px 0 var(--line);
+  }
+
+  .btn-primary kbd {
+    color: rgba(255, 250, 242, .8);
+    background: rgba(255, 255, 255, .14);
+    border-color: rgba(255, 255, 255, .22);
+    box-shadow: none;
+  }
+
+  [data-theme="dark"] .btn-primary kbd {
+    color: rgba(42, 20, 9, .72);
+    background: rgba(42, 20, 9, .1);
+    border-color: rgba(42, 20, 9, .18);
+  }
+
+  /* ---------- 工具栏 ---------- */
+
+  .board-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    max-width: var(--wall-max);
+    margin: 0 auto;
+    padding: 22px 28px 2px;
+  }
+
+  .search-field {
+    position: relative;
+    flex: 1 1 250px;
+    max-width: 380px;
+  }
+
+  .search-field > svg {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    width: 17px;
+    height: 17px;
+    color: var(--muted);
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .search-field input {
+    width: 100%;
+    height: 42px;
+    padding: 0 42px 0 40px;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: 14px;
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+
+  .search-field input::placeholder {
+    color: var(--faint);
+  }
+
+  .search-field input:focus {
+    outline: none;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
+  }
+
+  .search-field kbd {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+  }
+
+  .search-field input:focus + kbd {
+    opacity: 0;
+  }
+
+  .filters {
+    display: inline-flex;
+    gap: 2px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  .filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color .16s ease, background-color .16s ease;
+  }
+
+  .filter-btn:hover {
+    color: var(--ink);
+    background: var(--accent-soft);
+  }
+
+  .filter-btn.is-active {
+    color: var(--bg);
+    background: var(--ink);
+  }
+
+  .filter-count {
+    padding: 0 6px;
+    color: var(--ink-soft);
+    background: var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 17px;
+  }
+
+  .filter-btn.is-active .filter-count {
+    color: var(--bg);
+    background: color-mix(in srgb, var(--bg) 22%, transparent);
+  }
+
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 170px;
+    margin-left: auto;
+  }
+
+  .progress-track {
+    flex: 0 1 120px;
+    height: 6px;
+    overflow: hidden;
+    background: var(--line);
+    border-radius: 999px;
+  }
+
+  .progress-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), #e5a34a);
+    border-radius: inherit;
+    transition: width .3s ease;
+  }
+
+  .progress-text {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ---------- 便签墙 ---------- */
+
+  .wall {
+    max-width: var(--wall-max);
+    min-height: 62vh;
+    margin: 0 auto;
+    padding: 22px 28px 0;
+  }
+
+  .notes {
+    columns: 3 260px;
+    column-gap: 20px;
+  }
+
+  .note {
+    --note-line: rgba(80, 55, 15, .16);
+    --note-line-strong: rgba(80, 55, 15, .32);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 168px;
+    margin: 0 0 20px;
+    padding: 18px 16px 14px;
+    color: var(--note-ink);
+    background: linear-gradient(165deg, var(--note-bg-1), var(--note-bg-2));
+    border-radius: 4px 4px 9px 9px;
+    box-shadow: var(--shadow-card);
+    transform: rotate(var(--tilt, 0deg));
+    transition: transform .18s ease, box-shadow .18s ease, opacity .2s ease;
+    break-inside: avoid;
+    outline: none;
+  }
+
+  .note::before {
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    width: 72px;
+    height: 20px;
+    background: rgba(255, 255, 255, .58);
+    border-radius: 2px;
+    box-shadow: 0 1px 2px rgba(60, 40, 10, .1);
+    transform: translateX(-50%) rotate(-1.6deg);
+    pointer-events: none;
+  }
+
+  .note:nth-child(3n+1) {
+    --tilt: -.55deg;
+  }
+
+  .note:nth-child(3n+2) {
+    --tilt: .38deg;
+  }
+
+  .note:nth-child(3n) {
+    --tilt: -.12deg;
+  }
+
+  .note:hover,
+  .note:focus-visible {
+    transform: rotate(0deg) translateY(-2px);
+    box-shadow: 0 3px 3px rgba(71, 50, 21, .08), 0 22px 34px -18px rgba(71, 50, 21, .55);
+  }
+
+  .note:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
+  .note[data-color="yellow"] {
+    --note-bg-1: #ffe89a;
+    --note-bg-2: #ffdd78;
+    --note-ink: #43340f;
+    --note-muted: #7a6428;
+  }
+
+  .note[data-color="pink"] {
+    --note-bg-1: #ffcdd8;
+    --note-bg-2: #ffbccb;
+    --note-ink: #4a1e2a;
+    --note-muted: #8a4b5b;
+  }
+
+  .note[data-color="green"] {
+    --note-bg-1: #cdf2d4;
+    --note-bg-2: #b9e8c3;
+    --note-ink: #1e3d28;
+    --note-muted: #527a5d;
+  }
+
+  .note[data-color="blue"] {
+    --note-bg-1: #cfe8ff;
+    --note-bg-2: #bcddff;
+    --note-ink: #1c3550;
+    --note-muted: #557493;
+  }
+
+  .note[data-color="purple"] {
+    --note-bg-1: #e5daff;
+    --note-bg-2: #d8c9ff;
+    --note-ink: #33224f;
+    --note-muted: #6f5d91;
+  }
+
+  .note[data-color="orange"] {
+    --note-bg-1: #ffd9b4;
+    --note-bg-2: #ffc99b;
+    --note-ink: #4a2a0d;
+    --note-muted: #8a5c2e;
+  }
+
+  .note-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .note-check {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .note-check input {
+    position: absolute;
+    inset: 0;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .check-box {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: transparent;
+    background: rgba(255, 255, 255, .38);
+    border: 1.5px solid var(--note-line-strong);
+    border-radius: 7px;
+    transition: background-color .16s ease, border-color .16s ease, color .16s ease;
+  }
+
+  .check-box svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .note-check:hover .check-box {
+    background: rgba(255, 255, 255, .62);
+  }
+
+  .note-check input:checked + .check-box {
+    color: var(--note-bg-1);
+    background: var(--note-ink);
+    border-color: var(--note-ink);
+  }
+
+  .note-check input:focus-visible + .check-box {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  .drag-handle {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: var(--note-muted);
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .drag-handle:hover {
+    color: var(--note-ink);
+    background: rgba(0, 0, 0, .07);
+  }
+
+  .drag-handle.is-disabled {
+    opacity: .35;
+    cursor: not-allowed;
+  }
+
+  .drag-handle.is-active {
+    cursor: grabbing;
+    background: rgba(0, 0, 0, .1);
+  }
+
+  .drag-handle svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .note-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.45;
+    letter-spacing: .005em;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .note-body {
+    margin: 0;
+    color: var(--note-muted);
+    font-size: 13.5px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .note.is-done {
+    filter: saturate(.62);
+  }
+
+  .note.is-done .note-title {
+    color: var(--note-muted);
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: var(--note-muted);
+  }
+
+  .note.is-done .note-body {
+    opacity: .65;
+  }
+
+  .note-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 2px;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity .16s ease, transform .16s ease;
+  }
+
+  .note:hover .note-actions,
+  .note:focus-within .note-actions {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (hover: none) {
+    .note-actions {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .note-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 9px;
+    color: var(--note-muted);
+    background: rgba(255, 255, 255, .34);
+    border: 1px solid var(--note-line);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color .16s ease, color .16s ease;
+  }
+
+  .note-action:hover {
+    color: var(--note-ink);
+    background: rgba(255, 255, 255, .68);
+  }
+
+  .note-action.delete:hover {
+    color: #8d2418;
+    background: rgba(160, 40, 30, .16);
+  }
+
+  .note-action svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .note.is-dragging {
+    opacity: .35;
+    transform: rotate(0deg) scale(.98);
+  }
+
+  body.is-reordering {
+    cursor: grabbing;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .drop-indicator {
+    position: fixed;
+    z-index: 40;
+    height: 3px;
+    background: var(--accent);
+    border-radius: 999px;
+    box-shadow: 0 0 0 4px var(--accent-soft);
+    pointer-events: none;
+  }
+
+  /* ---------- 空状态 ---------- */
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 13px;
+    padding: 70px 24px;
+    text-align: center;
+    background: var(--panel);
+    border: 2px dashed var(--line-strong);
+    border-radius: 24px;
+  }
+
+  .empty-icon {
+    display: grid;
+    place-items: center;
+    width: 68px;
+    height: 68px;
+    margin-bottom: 4px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 20px;
+    transform: rotate(-4deg);
+  }
+
+  .empty-icon svg {
+    width: 33px;
+    height: 33px;
+  }
+
+  .empty h2 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1.35;
+  }
+
+  .empty p {
+    max-width: 430px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.75;
+  }
+
+  .empty .btn {
+    margin-top: 6px;
+  }
+
+  /* ---------- 底部 ---------- */
+
+  .page-foot {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    max-width: var(--wall-max);
+    margin: 30px auto 0;
+    padding: 18px 28px 34px;
+    color: var(--faint);
+    font-size: 12px;
+    border-top: 1px solid var(--line);
+  }
+
+  .page-foot p {
+    margin: 0;
+  }
+
+  .page-foot kbd {
+    min-width: 17px;
+    height: 17px;
+    font-size: 10px;
+  }
+
+  /* ---------- 编辑对话框 ---------- */
+
+  dialog {
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    color: var(--ink);
+    background: transparent;
+    border: 0;
+    outline: none;
+  }
+
+  dialog::backdrop {
+    background: rgba(23, 16, 10, .52);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+
+  .editor-panel {
+    width: min(520px, calc(100vw - 32px));
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    padding: 24px;
+    background: var(--panel-solid);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .dialog-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .dialog-head h2 {
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.4;
+  }
+
+  .dialog-head p {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  .dialog-head .icon-btn {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+  }
+
+  .dialog-head .icon-btn svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 18px;
+  }
+
+  .field > span {
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+  }
+
+  .field > span em {
+    color: var(--faint);
+    font-style: normal;
+    font-weight: 500;
+  }
+
+  .field input,
+  .field textarea {
+    width: 100%;
+    padding: 11px 13px;
+    color: var(--ink);
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    font-size: 14.5px;
+    transition: border-color .16s ease, box-shadow .16s ease;
+  }
+
+  .field textarea {
+    min-height: 96px;
+    line-height: 1.65;
+    resize: vertical;
+  }
+
+  .field input:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
+  }
+
+  .field input[aria-invalid="true"] {
+    border-color: #b3261e;
+  }
+
+  .colors {
+    margin: 20px 0 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .colors legend {
+    margin-bottom: 10px;
+    padding: 0;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+  }
+
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 13px;
+  }
+
+  .swatch {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
+  .swatch input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .swatch-dot {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    background: var(--swatch);
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .13), 0 2px 5px rgba(0, 0, 0, .13);
+    transition: transform .15s ease;
+  }
+
+  .swatch:hover .swatch-dot {
+    transform: scale(1.08);
+  }
+
+  .swatch input:checked + .swatch-dot {
+    box-shadow: 0 0 0 2px var(--panel-solid), 0 0 0 4px var(--ink);
+  }
+
+  .swatch input:checked + .swatch-dot::after {
+    content: "";
+    width: 8px;
+    height: 14px;
+    margin-top: -3px;
+    border-right: 2.5px solid #33251a;
+    border-bottom: 2.5px solid #33251a;
+    transform: rotate(45deg);
+  }
+
+  .swatch:has(input:focus-visible) .swatch-dot {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
+  .swatch input:checked ~ .swatch-name {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .form-error {
+    margin: 12px 0 0;
+    color: #b3261e;
+    font-size: 13px;
+  }
+
+  [data-theme="dark"] .form-error {
+    color: #ff9c91;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 24px;
+  }
+
+  /* ---------- 提示条 ---------- */
+
+  .toast {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: calc(100vw - 32px);
+    padding: 12px 13px 12px 18px;
+    color: #f7efe4;
+    background: #2a231d;
+    border-radius: 14px;
+    box-shadow: 0 24px 50px -18px rgba(0, 0, 0, .65);
+    opacity: 0;
+    transform: translate(-50%, 14px);
+    transition: opacity .22s ease, transform .22s ease;
+  }
+
+  .toast.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  .toast-text {
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+
+  .toast-action {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    color: #ffb08a;
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .toast-action:hover {
+    background: rgba(255, 255, 255, .1);
+  }
+
+  /* ---------- 响应式 ---------- */
+
+  @media (max-width: 900px) {
+    .topbar-inner,
+    .board-tools,
+    .wall,
+    .page-foot {
+      padding-right: 20px;
+      padding-left: 20px;
+    }
+
+    .notes {
+      columns: 2 240px;
+    }
+
+    .progress {
+      flex-basis: 100%;
+      margin-left: 0;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .topbar-inner {
+      gap: 10px;
+      padding-top: 12px;
+      padding-bottom: 12px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+    }
+
+    .brand-mark svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .brand-title {
+      font-size: 17px;
+    }
+
+    .brand-sub {
+      display: none;
+    }
+
+    .topbar-actions {
+      gap: 8px;
+    }
+
+    .btn {
+      height: 40px;
+      padding: 0 14px;
+    }
+
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+    }
+
+    .btn-primary .btn-label,
+    .btn-primary kbd {
+      display: none;
+    }
+
+    .btn-primary {
+      width: 40px;
+      padding: 0;
+    }
+
+    .board-tools {
+      gap: 10px;
+      padding-top: 16px;
+    }
+
+    .search-field {
+      flex-basis: 100%;
+      max-width: none;
+    }
+
+    .search-field kbd {
+      display: none;
+    }
+
+    .filters {
+      width: 100%;
+    }
+
+    .filter-btn {
+      flex: 1;
+      justify-content: center;
+      padding-right: 8px;
+      padding-left: 8px;
+    }
+
+    .progress {
+      width: 100%;
+    }
+
+    .progress-track {
+      flex: 1;
+      width: auto;
+    }
+
+    .notes {
+      columns: 1;
+    }
+
+    .note {
+      min-height: auto;
+      transform: none;
+    }
+
+    .note:hover,
+    .note:focus-visible {
+      transform: translateY(-2px);
+    }
+
+    .empty {
+      padding: 48px 20px;
+    }
+
+    .page-foot {
+      flex-direction: column;
+    }
+
+    .page-foot p:first-child {
+      display: none;
+    }
+
+    .editor-panel {
+      padding: 20px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition-duration: .001ms !important;
+      animation-duration: .001ms !important;
+    }
+
+    .note {
+      transform: none !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M5 3.5h10.5L20 8v12.2a.8.8 0 0 1-.8.8H5.8a.8.8 0 0 1-.8-.8V4.3a.8.8 0 0 1 .8-.8Z" fill="currentColor" opacity=".16"/>
+          <path d="M5 3.5h10.5L20 8v12.2a.8.8 0 0 1-.8.8H5.8a.8.8 0 0 1-.8-.8V4.3a.8.8 0 0 1 .8-.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M15.2 3.8V8H20" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M8 12h6M8 15.2h4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1 class="brand-title">任务便签墙</h1>
+        <span class="brand-sub">Sticky Task Wall</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="themeToggle" type="button" aria-label="切换到深色模式" title="切换到深色模式">
+        <span class="theme-icon theme-icon-moon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M20 14.4A8.2 8.2 0 0 1 9.6 4a8.2 8.2 0 1 0 10.4 10.4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="theme-icon theme-icon-sun" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M12 2.8v2.2M12 19v2.2M2.8 12H5M19 12h2.2M5.5 5.5l1.6 1.6M16.9 16.9l1.6 1.6M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </span>
+      </button>
+      <button class="btn btn-primary" id="addNoteBtn" type="button" aria-label="新建便签">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span class="btn-label">新建便签</span>
+        <kbd>N</kbd>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="board-tools">
+  <div class="search-field">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/>
+      <path d="m16 16 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <input id="searchInput" type="search" placeholder="搜索任务或备注…" aria-label="搜索便签" autocomplete="off" spellcheck="false">
+    <kbd>/</kbd>
+  </div>
+  <div class="filters" id="filterGroup" role="group" aria-label="按状态筛选便签">
+    <button class="filter-btn is-active" type="button" data-filter="all" aria-pressed="true">
+      全部 <span class="filter-count" id="countAll">0</span>
+    </button>
+    <button class="filter-btn" type="button" data-filter="active" aria-pressed="false">
+      进行中 <span class="filter-count" id="countActive">0</span>
+    </button>
+    <button class="filter-btn" type="button" data-filter="done" aria-pressed="false">
+      已完成 <span class="filter-count" id="countDone">0</span>
+    </button>
+  </div>
+  <div class="progress" id="progress" hidden>
+    <div class="progress-track" aria-hidden="true"><i class="progress-fill" id="progressFill"></i></div>
+    <span class="progress-text" id="progressText">0 / 0 已完成</span>
+  </div>
+</div>
+
+<main class="wall" id="wall" aria-label="任务便签墙">
+  <div class="notes" id="notesList" role="list"></div>
+  <section class="empty" id="emptyState" hidden>
+    <span class="empty-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4.5 4.2h11L19.5 8.7v11.1a.9.9 0 0 1-.9.9H4.5a.9.9 0 0 1-.9-.9V5.1a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M15 4.2v4.6h4.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="m8 13.4 2.6 2.6 4.8-5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <h2 id="emptyTitle">这面墙还很空</h2>
+    <p id="emptyText">点击「新建便签」，或双击墙面空白处，写下第一件要做的事。</p>
+    <button class="btn btn-primary" id="emptyAction" type="button" data-action="add">新建第一张便签</button>
+  </section>
+</main>
+
+<footer class="page-foot">
+  <p>双击墙面空白处新建便签 · 拖动手柄排序 · 手柄聚焦后按 <kbd>Alt</kbd> + 方向键移动</p>
+  <p>数据仅保存在当前浏览器的本地存储中</p>
+</footer>
+
+<dialog id="editorDialog" aria-labelledby="dialogTitle">
+  <form class="editor-panel" id="noteForm" novalidate>
+    <header class="dialog-head">
+      <div>
+        <h2 id="dialogTitle">新建便签</h2>
+        <p>写下一件具体、可以开始做的小事。</p>
+      </div>
+      <button class="icon-btn" id="closeDialogBtn" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </header>
+
+    <label class="field">
+      <span>任务</span>
+      <input id="noteTitle" type="text" maxlength="100" required aria-required="true" placeholder="例如：整理季度复盘材料" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span>备注 <em>可选</em></span>
+      <textarea id="noteBody" maxlength="600" rows="4" placeholder="补充细节、下一步或截止时间…"></textarea>
+    </label>
+
+    <fieldset class="colors">
+      <legend>便签颜色</legend>
+      <div class="swatches" id="colorOptions"></div>
+    </fieldset>
+
+    <p class="form-error" id="formError" role="alert" hidden></p>
+
+    <footer class="dialog-actions">
+      <button class="btn btn-ghost" id="cancelBtn" type="button">取消</button>
+      <button class="btn btn-primary" id="saveBtn" type="submit">保存便签</button>
+    </footer>
+  </form>
+</dialog>
+
+<div class="drop-indicator" id="dropIndicator" hidden></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+  <span class="toast-text" id="toastText"></span>
+  <button class="toast-action" id="toastAction" type="button" hidden></button>
+</div>
+
+<p class="sr-only" id="liveRegion" aria-live="polite"></p>
+
+<script>
+  (function () {
+    'use strict';
+
+    var NOTES_KEY = 'sticky-notes.notes.v1';
+    var THEME_KEY = 'sticky-notes.theme.v1';
+    var MAX_TITLE = 100;
+    var MAX_BODY = 600;
+    var COLORS = ['yellow', 'pink', 'green', 'blue', 'purple', 'orange'];
+    var COLOR_META = {
+      yellow: { label: '黄色', hex: '#ffe08a' },
+      pink: { label: '粉色', hex: '#ffc4d3' },
+      green: { label: '绿色', hex: '#c4efcd' },
+      blue: { label: '蓝色', hex: '#c7e4ff' },
+      purple: { label: '紫色', hex: '#ded1ff' },
+      orange: { label: '橙色', hex: '#ffd0a6' }
+    };
+    var ICONS = {
+      grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+      check: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 12.6 4.3 4.3L19 7.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      edit: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4.3L19 9.3a2.2 2.2 0 0 0-3.1-3.1L5.2 16.9 4 20Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m13.8 8 2.9 2.9" stroke="currentColor" stroke-width="1.7"/></svg>',
+      trash: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.7 7l.9 12.3h8.8L17.3 7M10.2 11v5.2M13.8 11v5.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    };
+
+    var state = {
+      notes: [],
+      filter: 'all',
+      query: '',
+      editingId: null,
+      lastDeleted: null,
+      lastColor: null
+    };
+    var storageWarned = false;
+    var toastTimer = null;
+    var toastHideTimer = null;
+    var drag = null;
+    var els = {};
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = text;
+      return node;
+    }
+
+    function uid() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return 'note-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+    }
+
+    function clampText(value, max) {
+      return typeof value === 'string' ? value.trim().slice(0, max) : '';
+    }
+
+    function normalizeNote(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      var title = clampText(raw.title, MAX_TITLE);
+      if (!title) return null;
+      return {
+        id: typeof raw.id === 'string' && raw.id ? raw.id : uid(),
+        title: title,
+        note: clampText(raw.note, MAX_BODY),
+        color: COLORS.indexOf(raw.color) >= 0 ? raw.color : 'yellow',
+        done: raw.done === true,
+        createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
+        updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now()
+      };
+    }
+
+    function loadNotes() {
+      var raw = null;
+      try {
+        raw = window.localStorage.getItem(NOTES_KEY);
+      } catch (error) {
+        return { notes: [], failed: false };
+      }
+      if (!raw) return { notes: [], failed: false };
+
+      try {
+        var parsed = JSON.parse(raw);
+        var list = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.notes) ? parsed.notes : []);
+        var seen = Object.create(null);
+        var notes = [];
+        for (var i = 0; i < list.length; i += 1) {
+          var note = normalizeNote(list[i]);
+          if (!note) continue;
+          if (seen[note.id]) note.id = uid();
+          seen[note.id] = true;
+          notes.push(note);
+        }
+        return { notes: notes, failed: false };
+      } catch (error) {
+        try {
+          window.localStorage.setItem(NOTES_KEY + '.broken', raw);
+        } catch (ignore) {
+          /* 备份失败也不阻断启动 */
+        }
+        return { notes: [], failed: true };
+      }
+    }
+
+    function persist() {
+      try {
+        window.localStorage.setItem(NOTES_KEY, JSON.stringify({
+          version: 1,
+          updatedAt: Date.now(),
+          notes: state.notes
+        }));
+      } catch (error) {
+        if (!storageWarned) {
+          storageWarned = true;
+          showToast('浏览器本地存储不可用，改动可能不会保留');
+        }
+      }
+    }
+
+    function findNote(id) {
+      for (var i = 0; i < state.notes.length; i += 1) {
+        if (state.notes[i].id === id) return state.notes[i];
+      }
+      return null;
+    }
+
+    function isFiltered() {
+      return state.filter !== 'all' || state.query.trim() !== '';
+    }
+
+    function cardById(id) {
+      var cards = els.notesList.children;
+      for (var i = 0; i < cards.length; i += 1) {
+        if (cards[i].dataset.id === id) return cards[i];
+      }
+      return null;
+    }
+
+    function announce(message) {
+      window.setTimeout(function () {
+        els.liveRegion.textContent = message;
+      }, 30);
+    }
+
+    function focusById(id, fallback) {
+      window.requestAnimationFrame(function () {
+        var card = id ? cardById(id) : null;
+        if (card) {
+          card.focus({ preventScroll: true });
+          return;
+        }
+        if (fallback) {
+          fallback.focus({ preventScroll: true });
+          return;
+        }
+        var activeFilter = els.filterGroup.querySelector('.filter-btn.is-active');
+        if (activeFilter) {
+          activeFilter.focus({ preventScroll: true });
+        } else {
+          els.addNoteBtn.focus({ preventScroll: true });
+        }
+      });
+    }
+
+    function truncate(text, length) {
+      return text.length > length ? text.slice(0, length) + '…' : text;
+    }
+
+    /* ---------- 提示条 ---------- */
+
+    function showToast(message, actionLabel, action) {
+      window.clearTimeout(toastHideTimer);
+      window.clearTimeout(toastTimer);
+      els.toastText.textContent = message;
+      if (actionLabel && typeof action === 'function') {
+        els.toastAction.hidden = false;
+        els.toastAction.textContent = actionLabel;
+        els.toastAction.onclick = function () {
+          hideToast();
+          action();
+        };
+      } else {
+        els.toastAction.hidden = true;
+        els.toastAction.textContent = '';
+        els.toastAction.onclick = null;
+      }
+      els.toast.hidden = false;
+      window.requestAnimationFrame(function () {
+        els.toast.classList.add('is-visible');
+      });
+      toastTimer = window.setTimeout(hideToast, actionLabel ? 7000 : 4200);
+    }
+
+    function hideToast() {
+      window.clearTimeout(toastTimer);
+      toastTimer = null;
+      els.toast.classList.remove('is-visible');
+      window.clearTimeout(toastHideTimer);
+      toastHideTimer = window.setTimeout(function () {
+        if (!toastTimer) els.toast.hidden = true;
+      }, 240);
+    }
+
+    /* ---------- 渲染 ---------- */
+
+    function visibleNotes() {
+      var query = state.query.trim().toLowerCase();
+      return state.notes.filter(function (note) {
+        if (state.filter === 'active' && note.done) return false;
+        if (state.filter === 'done' && !note.done) return false;
+        if (!query) return true;
+        return note.title.toLowerCase().indexOf(query) >= 0 || note.note.toLowerCase().indexOf(query) >= 0;
+      });
+    }
+
+    function createCard(note) {
+      var card = el('article', 'note');
+      card.dataset.id = note.id;
+      card.dataset.color = note.color;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'listitem');
+      card.setAttribute('aria-label', note.title + (note.done ? '，已完成' : ''));
+      if (note.done) card.classList.add('is-done');
+
+      var head = el('div', 'note-head');
+      var checkLabel = el('label', 'note-check');
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = note.done;
+      checkbox.setAttribute('aria-label', note.done ? '标记「' + note.title + '」为未完成' : '标记「' + note.title + '」为已完成');
+      var checkBox = el('span', 'check-box');
+      checkBox.innerHTML = ICONS.check;
+      checkLabel.append(checkbox, checkBox);
+
+      var grip = el('button', 'drag-handle');
+      grip.type = 'button';
+      grip.innerHTML = ICONS.grip;
+      grip.setAttribute('aria-label', '拖动「' + note.title + '」调整顺序');
+      if (isFiltered()) {
+        grip.setAttribute('aria-disabled', 'true');
+        grip.classList.add('is-disabled');
+        grip.title = '清除筛选后可拖动排序';
+      } else {
+        grip.title = '拖动排序（聚焦后按 Alt + 方向键）';
+      }
+
+      head.append(checkLabel, grip);
+
+      var title = el('h2', 'note-title', note.title);
+      var body = el('p', 'note-body', note.note);
+      if (!note.note) body.hidden = true;
+
+      var actions = el('div', 'note-actions');
+      var editBtn = el('button', 'note-action');
+      editBtn.type = 'button';
+      editBtn.innerHTML = ICONS.edit + '<span>编辑</span>';
+      editBtn.setAttribute('aria-label', '编辑「' + note.title + '」');
+      var deleteBtn = el('button', 'note-action delete');
+      deleteBtn.type = 'button';
+      deleteBtn.innerHTML = ICONS.trash + '<span>删除</span>';
+      deleteBtn.setAttribute('aria-label', '删除「' + note.title + '」');
+      actions.append(editBtn, deleteBtn);
+
+      card.append(head, title, body, actions);
+
+      checkbox.addEventListener('change', function () {
+        toggleNote(note.id, checkbox.checked);
+      });
+
+      grip.addEventListener('pointerdown', function (event) {
+        startDrag(event, note.id);
+      });
+
+      grip.addEventListener('keydown', function (event) {
+        if (!event.altKey) return;
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          moveByKeyboard(note.id, event.key);
+        }
+      });
+
+      editBtn.addEventListener('click', function () {
+        openEditor(note.id);
+      });
+
+      deleteBtn.addEventListener('click', function () {
+        deleteNote(note.id);
+      });
+
+      card.addEventListener('dblclick', function (event) {
+        if (event.target.closest('button, input, label')) return;
+        openEditor(note.id);
+      });
+
+      card.addEventListener('keydown', function (event) {
+        if (event.target !== card) return;
+        if (event.key === 'Enter' || event.key === 'e') {
+          event.preventDefault();
+          openEditor(note.id);
+        } else if (event.key === ' ') {
+          event.preventDefault();
+          toggleNote(note.id, !note.done);
+        } else if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          deleteNote(note.id);
+        }
+      });
+
+      return card;
+    }
+
+    function render() {
+      var total = state.notes.length;
+      var done = state.notes.filter(function (note) { return note.done; }).length;
+      var active = total - done;
+      var visible = visibleNotes();
+      var query = state.query.trim();
+
+      els.countAll.textContent = String(total);
+      els.countActive.textContent = String(active);
+      els.countDone.textContent = String(done);
+
+      Array.prototype.forEach.call(els.filterGroup.querySelectorAll('.filter-btn'), function (button) {
+        var isActive = button.dataset.filter === state.filter;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+      });
+
+      els.progress.hidden = total === 0;
+      els.progressText.textContent = done + ' / ' + total + ' 已完成';
+      els.progressFill.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+
+      els.notesList.replaceChildren();
+      if (visible.length) {
+        var fragment = document.createDocumentFragment();
+        visible.forEach(function (note) {
+          fragment.appendChild(createCard(note));
+        });
+        els.notesList.appendChild(fragment);
+      }
+      els.notesList.hidden = visible.length === 0;
+
+      var noNotes = total === 0;
+      var noMatch = total > 0 && visible.length === 0;
+      els.emptyState.hidden = !(noNotes || noMatch);
+
+      if (noNotes) {
+        els.emptyTitle.textContent = '这面墙还很空';
+        els.emptyText.textContent = '点击「新建便签」，或双击墙面空白处，写下第一件要做的事。';
+        els.emptyAction.textContent = '新建第一张便签';
+        els.emptyAction.dataset.action = 'add';
+      } else if (noMatch) {
+        els.emptyTitle.textContent = '没有找到匹配的便签';
+        els.emptyText.textContent = state.query.trim() || state.filter !== 'all'
+          ? '换个关键词，或者清除筛选条件再看看。'
+          : '换个关键词再看看。';
+        els.emptyAction.textContent = '清除筛选';
+        els.emptyAction.dataset.action = 'clear';
+      }
+    }
+
+    /* ---------- 新建 / 编辑 ---------- */
+
+    function openEditor(id) {
+      if (els.editorDialog.open) return;
+      var note = id ? findNote(id) : null;
+      state.editingId = note ? note.id : null;
+      els.dialogTitle.textContent = note ? '编辑便签' : '新建便签';
+      els.saveBtn.textContent = note ? '保存修改' : '保存便签';
+      els.noteTitle.value = note ? note.title : '';
+      els.noteBody.value = note ? note.note : '';
+      els.formError.hidden = true;
+      els.formError.textContent = '';
+      els.noteTitle.removeAttribute('aria-invalid');
+
+      var color = note ? note.color : (state.lastColor || COLORS[state.notes.length % COLORS.length]);
+      Array.prototype.forEach.call(els.noteForm.elements.noteColor, function (input) {
+        input.checked = input.value === color;
+      });
+
+      els.editorDialog.showModal();
+      window.requestAnimationFrame(function () {
+        els.noteTitle.focus();
+        els.noteTitle.select();
+      });
+    }
+
+    function closeEditor() {
+      if (els.editorDialog.open) els.editorDialog.close();
+    }
+
+    function saveEditor() {
+      var title = els.noteTitle.value.trim();
+      var body = els.noteBody.value.trim();
+      if (!title) {
+        els.formError.textContent = '请先写下任务内容。';
+        els.formError.hidden = false;
+        els.noteTitle.setAttribute('aria-invalid', 'true');
+        els.noteTitle.focus();
+        return;
+      }
+
+      var colorInput = els.noteForm.querySelector('input[name="noteColor"]:checked');
+      var color = colorInput ? colorInput.value : 'yellow';
+      var editingId = state.editingId;
+      var focusTargetId;
+
+      if (editingId) {
+        var note = findNote(editingId);
+        if (!note) {
+          closeEditor();
+          return;
+        }
+        note.title = title;
+        note.note = body;
+        note.color = color;
+        note.updatedAt = Date.now();
+        focusTargetId = note.id;
+        announce('便签已更新');
+      } else {
+        var created = {
+          id: uid(),
+          title: title,
+          note: body,
+          color: color,
+          done: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        state.notes.unshift(created);
+        focusTargetId = created.id;
+        announce('已新建便签');
+      }
+
+      state.lastColor = color;
+      persist();
+      closeEditor();
+      render();
+      focusById(focusTargetId);
+    }
+
+    /* ---------- 操作 ---------- */
+
+    function toggleNote(id, done) {
+      var note = findNote(id);
+      if (!note) return;
+      note.done = done;
+      note.updatedAt = Date.now();
+      persist();
+      render();
+      announce(done ? '已完成「' + note.title + '」' : '已恢复「' + note.title + '」');
+      focusById(id);
+    }
+
+    function deleteNote(id) {
+      var index = -1;
+      for (var i = 0; i < state.notes.length; i += 1) {
+        if (state.notes[i].id === id) {
+          index = i;
+          break;
+        }
+      }
+      if (index < 0) return;
+
+      var removed = state.notes.splice(index, 1)[0];
+      state.lastDeleted = { note: removed, index: index };
+      var nextNote = state.notes[Math.min(index, state.notes.length - 1)] || null;
+      persist();
+      render();
+      showToast('已删除「' + truncate(removed.title, 16) + '」', '撤销', undoDelete);
+      announce('已删除「' + removed.title + '」');
+      focusById(nextNote ? nextNote.id : null);
+    }
+
+    function undoDelete() {
+      if (!state.lastDeleted) return;
+      var entry = state.lastDeleted;
+      state.lastDeleted = null;
+      var insertAt = Math.min(entry.index, state.notes.length);
+      state.notes.splice(insertAt, 0, entry.note);
+      persist();
+      render();
+      focusById(entry.note.id);
+      announce('已恢复「' + entry.note.title + '」');
+    }
+
+    /* ---------- 排序 ---------- */
+
+    function moveNote(id, targetId, after) {
+      if (id === targetId) return;
+      var from = -1;
+      var target = null;
+      for (var i = 0; i < state.notes.length; i += 1) {
+        if (state.notes[i].id === id) from = i;
+        if (state.notes[i].id === targetId) target = state.notes[i];
+      }
+      if (from < 0 || !target) return;
+
+      var removed = state.notes.splice(from, 1)[0];
+      var to = state.notes.indexOf(target);
+      if (to < 0) {
+        state.notes.splice(from, 0, removed);
+        return;
+      }
+      if (after) to += 1;
+      state.notes.splice(to, 0, removed);
+      persist();
+      render();
+      focusById(id);
+      announce('已调整「' + removed.title + '」的顺序');
+    }
+
+    function moveByKeyboard(id, key) {
+      if (isFiltered()) {
+        announce('清除筛选后才能调整顺序');
+        return;
+      }
+      var from = -1;
+      for (var i = 0; i < state.notes.length; i += 1) {
+        if (state.notes[i].id === id) {
+          from = i;
+          break;
+        }
+      }
+      if (from < 0) return;
+      var to = from;
+      if (key === 'ArrowLeft' || key === 'ArrowUp') to = Math.max(0, from - 1);
+      if (key === 'ArrowRight' || key === 'ArrowDown') to = Math.min(state.notes.length - 1, from + 1);
+      if (to === from) return;
+
+      var removed = state.notes.splice(from, 1)[0];
+      state.notes.splice(to, 0, removed);
+      persist();
+      render();
+      focusById(id, null);
+      announce('已移动「' + removed.title + '」');
+    }
+
+    function showDropIndicator(card, after) {
+      var rect = card.getBoundingClientRect();
+      els.dropIndicator.hidden = false;
+      els.dropIndicator.style.left = rect.left + 'px';
+      els.dropIndicator.style.top = (after ? rect.bottom - 1 : rect.top - 1) + 'px';
+      els.dropIndicator.style.width = rect.width + 'px';
+    }
+
+    function hideDropIndicator() {
+      els.dropIndicator.hidden = true;
+    }
+
+    function startDrag(event, id) {
+      if (isFiltered()) {
+        announce('清除筛选后才能调整顺序');
+        return;
+      }
+      if (event.button !== 0) return;
+      var handle = event.currentTarget;
+      var card = handle.closest('.note');
+      if (!card) return;
+
+      event.preventDefault();
+      drag = {
+        id: id,
+        card: card,
+        handle: handle,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        active: false,
+        targetId: null,
+        after: false
+      };
+
+      try {
+        handle.setPointerCapture(event.pointerId);
+      } catch (error) {
+        /* 忽略捕获失败 */
+      }
+
+      document.addEventListener('pointermove', onDragMove);
+      document.addEventListener('pointerup', onDragEnd);
+      document.addEventListener('pointercancel', onDragEnd);
+    }
+
+    function onDragMove(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+
+      if (!drag.active) {
+        if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+        drag.active = true;
+        drag.card.classList.add('is-dragging');
+        drag.handle.classList.add('is-active');
+        document.body.classList.add('is-reordering');
+      }
+
+      var cards = els.notesList.querySelectorAll('.note:not(.is-dragging)');
+      var best = null;
+      var bestDistance = Infinity;
+      for (var i = 0; i < cards.length; i += 1) {
+        var rect = cards[i].getBoundingClientRect();
+        var distance = Math.hypot(
+          event.clientX - (rect.left + rect.width / 2),
+          event.clientY - (rect.top + rect.height / 2)
+        );
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { card: cards[i], rect: rect };
+        }
+      }
+
+      if (!best) {
+        drag.targetId = null;
+        hideDropIndicator();
+        return;
+      }
+
+      drag.targetId = best.card.dataset.id;
+      drag.after = event.clientY > best.rect.top + best.rect.height / 2;
+      showDropIndicator(best.card, drag.after);
+    }
+
+    function onDragEnd(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      var current = drag;
+      drag = null;
+
+      document.removeEventListener('pointermove', onDragMove);
+      document.removeEventListener('pointerup', onDragEnd);
+      document.removeEventListener('pointercancel', onDragEnd);
+      try {
+        current.handle.releasePointerCapture(event.pointerId);
+      } catch (error) {
+        /* 忽略释放失败 */
+      }
+
+      current.card.classList.remove('is-dragging');
+      current.handle.classList.remove('is-active');
+      document.body.classList.remove('is-reordering');
+      hideDropIndicator();
+
+      if (current.active && current.targetId && current.targetId !== current.id) {
+        moveNote(current.id, current.targetId, current.after);
+      }
+    }
+
+    /* ---------- 主题 ---------- */
+
+    function applyTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      var meta = document.getElementById('themeColor');
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#15110e' : '#f2ecdf');
+      var label = theme === 'dark' ? '切换到浅色模式' : '切换到深色模式';
+      els.themeToggle.setAttribute('aria-label', label);
+      els.themeToggle.title = label;
+    }
+
+    function currentTheme() {
+      return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+    }
+
+    /* ---------- 初始化 ---------- */
+
+    function buildColorOptions() {
+      var fragment = document.createDocumentFragment();
+      COLORS.forEach(function (value, index) {
+        var label = el('label', 'swatch');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'noteColor';
+        input.value = value;
+        if (index === 0) input.checked = true;
+        var dot = el('span', 'swatch-dot');
+        dot.style.setProperty('--swatch', COLOR_META[value].hex);
+        var name = el('span', 'swatch-name', COLOR_META[value].label);
+        label.append(input, dot, name);
+        fragment.appendChild(label);
+      });
+      els.colorOptions.appendChild(fragment);
+    }
+
+    function bindEvents() {
+      els.addNoteBtn.addEventListener('click', function () {
+        openEditor();
+      });
+
+      els.themeToggle.addEventListener('click', function () {
+        var next = currentTheme() === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        try {
+          window.localStorage.setItem(THEME_KEY, next);
+        } catch (error) {
+          /* 主题偏好无法保存时忽略 */
+        }
+        announce(next === 'dark' ? '已切换到深色模式' : '已切换到浅色模式');
+      });
+
+      els.searchInput.addEventListener('input', function () {
+        state.query = els.searchInput.value;
+        render();
+      });
+
+      els.filterGroup.addEventListener('click', function (event) {
+        var button = event.target.closest('.filter-btn');
+        if (!button) return;
+        state.filter = button.dataset.filter;
+        render();
+      });
+
+      els.emptyAction.addEventListener('click', function () {
+        if (els.emptyAction.dataset.action === 'clear') {
+          state.filter = 'all';
+          state.query = '';
+          els.searchInput.value = '';
+          render();
+          els.searchInput.focus();
+        } else {
+          openEditor();
+        }
+      });
+
+      els.wall.addEventListener('dblclick', function (event) {
+        if (event.target.closest('.note, button, input, textarea, label, a')) return;
+        openEditor();
+      });
+
+      els.noteForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        saveEditor();
+      });
+
+      els.noteForm.addEventListener('keydown', function (event) {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault();
+          els.noteForm.requestSubmit();
+        }
+      });
+
+      els.cancelBtn.addEventListener('click', closeEditor);
+      els.closeDialogBtn.addEventListener('click', closeEditor);
+
+      els.editorDialog.addEventListener('click', function (event) {
+        if (event.target === els.editorDialog) closeEditor();
+      });
+
+      els.editorDialog.addEventListener('close', function () {
+        state.editingId = null;
+        els.formError.hidden = true;
+        els.formError.textContent = '';
+        els.noteTitle.removeAttribute('aria-invalid');
+      });
+
+      els.noteTitle.addEventListener('input', function () {
+        if (els.noteTitle.getAttribute('aria-invalid') === 'true' && els.noteTitle.value.trim()) {
+          els.noteTitle.removeAttribute('aria-invalid');
+          els.formError.hidden = true;
+        }
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (els.editorDialog.open) return;
+        var target = event.target;
+        var typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+
+        if (typing) {
+          if (target === els.searchInput && event.key === 'Escape') {
+            if (els.searchInput.value) {
+              els.searchInput.value = '';
+              state.query = '';
+              render();
+            } else {
+              els.searchInput.blur();
+            }
+          }
+          return;
+        }
+
+        if ((event.key === 'n' || event.key === 'N') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          openEditor();
+        } else if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          els.searchInput.focus();
+          els.searchInput.select();
+        }
+      });
+    }
+
+    function init() {
+      els = {
+        wall: document.getElementById('wall'),
+        notesList: document.getElementById('notesList'),
+        emptyState: document.getElementById('emptyState'),
+        emptyTitle: document.getElementById('emptyTitle'),
+        emptyText: document.getElementById('emptyText'),
+        emptyAction: document.getElementById('emptyAction'),
+        countAll: document.getElementById('countAll'),
+        countActive: document.getElementById('countActive'),
+        countDone: document.getElementById('countDone'),
+        filterGroup: document.getElementById('filterGroup'),
+        searchInput: document.getElementById('searchInput'),
+        progress: document.getElementById('progress'),
+        progressFill: document.getElementById('progressFill'),
+        progressText: document.getElementById('progressText'),
+        addNoteBtn: document.getElementById('addNoteBtn'),
+        themeToggle: document.getElementById('themeToggle'),
+        editorDialog: document.getElementById('editorDialog'),
+        noteForm: document.getElementById('noteForm'),
+        dialogTitle: document.getElementById('dialogTitle'),
+        noteTitle: document.getElementById('noteTitle'),
+        noteBody: document.getElementById('noteBody'),
+        colorOptions: document.getElementById('colorOptions'),
+        formError: document.getElementById('formError'),
+        cancelBtn: document.getElementById('cancelBtn'),
+        closeDialogBtn: document.getElementById('closeDialogBtn'),
+        saveBtn: document.getElementById('saveBtn'),
+        dropIndicator: document.getElementById('dropIndicator'),
+        toast: document.getElementById('toast'),
+        toastText: document.getElementById('toastText'),
+        toastAction: document.getElementById('toastAction'),
+        liveRegion: document.getElementById('liveRegion')
+      };
+
+      var loaded = loadNotes();
+      state.notes = loaded.notes;
+
+      buildColorOptions();
+      bindEvents();
+      applyTheme(currentTheme());
+      render();
+
+      if (loaded.failed) {
+        showToast('无法读取已保存的便签，已按空白墙启动');
+      }
+    }
+
+    init();
+  })();
+</script>
+</body>
+</html>
