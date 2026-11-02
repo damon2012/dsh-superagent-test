@@ -22,6 +22,10 @@
       theme = 'dark';
     }
     document.documentElement.dataset.theme = theme;
+    var themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) {
+      themeColor.setAttribute('content', theme === 'light' ? '#f7f1ea' : '#110c0b');
+    }
   })();
 </script>
 <style>
@@ -1127,6 +1131,7 @@
     if (!MODE_META[mode]) return;
     stopTicker();
     state.running = false;
+    if (mode === 'focus' && state.cycle >= 4) state.cycle = 0;
     state.mode = mode;
     state.totalMs = phaseDuration(mode);
     state.remainingMs = state.totalMs;
